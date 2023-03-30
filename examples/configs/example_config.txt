@@ -1,0 +1,98 @@
+[PRIORS]
+age = 500.,5000.
+lrelease = 0.1,2.0
+lmatch = 0.1,2.0
+xi0 = 0.0001, 0.01
+alpha = 10.,30.
+rh = 0.0001,0.01
+mbar = 1.,20.
+logmsat = 3.,4.5
+sigv = 0.1,5.
+xc = 10.,14.
+yc = 0.1,2.5
+zc = 6.,8.
+vxc = 90.,115.
+vyc = -280.,-230.
+vzc = -120.,-80.
+stripnear = 0.0,1.0
+
+[TRUE VALUES]
+age = 3000.
+lrelease = 1.405
+lmatch = 1.846
+xi0 = 0.001
+alpha = 20.9
+rh = 0.001
+mbar = 3.
+logmsat = 4.05
+sigv = 1.1
+xc = 11.8
+yc = 0.79
+zc = 6.4
+vxc = 109.5
+vyc = -254.5
+vzc = -90.3
+stripnear = 0.5
+
+[BINNING]
+phi1 = -120.,70.
+phi2 = -8.,2.
+pm_phi1_cosphi2 = -2.,1.
+pm_phi2 = -0.1,0.1
+vrad = -250.,250.
+dist = 6.,20.
+nbins = 64,32
+
+[ERRORS]
+phi1 = 0.001
+phi2 = 0.15
+pm_phi1_cosphi2 = 0.1
+pm_phi2 = 0.0
+vrad = 5.
+dist = 0.25
+stream_selection = 0.95
+total_background = 2e6
+background_removal = 0.00001
+
+[ZARR PARAMS]
+run_id = albatross_example
+use_zarr = True
+sim_schedule = 30_000,30_000,30_000,30_000,30_000,60_000,150_000
+chunk_size = 10
+run_parallel = True
+njobs = 128
+targets = z,stream,background
+store_path = /path/to/data/store/albatross_example
+run_description = Example config for running albatross v0.0.1
+
+[TMNRE]
+num_rounds = 7
+1d_only = True
+infer_only = True
+marginals = (0, 1)
+bounds_th = 1e-5
+resampler = False
+shuffling = True
+noise_targets = background
+generate_obs = False
+obs_path = /path/to/observation/observation_albatross_example
+
+[NETWORK]
+in_channels = pos,vel,rad
+num_1d_features = 32
+num_2d_features = 128
+
+[HYPERPARAMS]
+min_epochs = 0
+max_epochs = 50
+early_stopping = 20
+learning_rate = 5e-4
+num_workers = 6
+training_batch_size = 64
+validation_batch_size = 64
+train_data = 0.9
+val_data = 0.1
+
+[DEVICE PARAMS]
+device = gpu
+n_devices = 1
