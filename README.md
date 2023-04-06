@@ -4,13 +4,21 @@
 ### Description
 
 - **Albatross** is a Simulation-based Inference (SBI) library designed to perform analysis on Milky Way stellar streams. It is built on top of the [swyft](https://swyft.readthedocs.io/en/lightning/) code, which implements neural ratio estimation to efficiently access marginal posteriors for all parameters of interest.
-- **Related paper:** The details regarding the implementation of the TMNRE algorithm and the specific demonstration for mock GD1-like stellar streams can be found in (link to our paper).
+- **Related paper:** The details regarding the implementation of the TMNRE algorithm and the specific demonstration for mock GD1-like stellar streams can be found in [arxiv:2304.02032](https://arxiv.org/abs/2304.02032).
 - **Modelling Code:** In paralell, we develop a `jax`-accelerated modelling code [`sstrax`](https://github.com/undark-lab/sstrax) <img align="center" height="20" src="./images/sstrax_logo.png"> which is available for download from [this repo](https://github.com/undark-lab/sstrax).
 - **Key benefits:** We showed in the above paper that albatross is extremely sample efficient when constraining e.g. the 16 parameters in our current model, requiring only 350,000 simulations to perform inference across the full parameter space. The method is also an 'implicit likelihood' technique, so it inherits all the associated advantages such as the fact that it does not require an explicit likelihood to be written down. This opens up the possibility of using albatross to analyse a wide range of interesting physical effects relevant to stellar streams, their environment and evolution history.
 - **Contacts:** For questions and comments on the code, please contact either [James Alvey](mailto:j.b.g.alvey@uva.nl), [Mathis Gerdes](mailto:m.gerdes@uva.nl) or [Christoph Weniger](mailto:c.weniger@uva.nl). Alternatively feel free to [open an issue](https://github.com/undark-lab/albatross/issues/new).
 - **Citation:** If you use albatross in your analysis, or find it useful, we would ask that you please use the following citation.
 ```
-@article{...}
+@article{Alvey:2023pkx,
+    author = "Alvey, James and Gerdes, Mathis and Weniger, Christoph",
+    title = "{Albatross: A scalable simulation-based inference pipeline for analysing stellar streams in the Milky Way}",
+    eprint = "2304.02032",
+    archivePrefix = "arXiv",
+    primaryClass = "astro-ph.GA",
+    month = "4",
+    year = "2023"
+}
 ```
 ----
 ## Recommended Installation Instructions
@@ -83,4 +91,4 @@ Result output:
 
 ----
 ## Release Details
-- v0.0.1 | *April 2023* | Initial release based on [arxiv:2004.xxxx](). Corresponding `sstrax` release: [`v0.0.1`](https://github.com/undark-lab/sstrax/releases/tag/v0.0.1).
+- v0.0.1 | *April 2023* | Initial release based on [arxiv:2304.02032](https://arxiv.org/abs/2304.02032). Corresponding `sstrax` release: [`v0.0.1`](https://github.com/undark-lab/sstrax/releases/tag/v0.0.1).
