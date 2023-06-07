@@ -20,6 +20,8 @@
     year = "2023"
 }
 ```
+- **ASCL Code Record:** Please also see the dedicated ASCL code record: <a href="https://ascl.net/2306.009"><img src="https://img.shields.io/badge/ascl-2306.009-blue.svg?colorB=262255" alt="ascl:2306.009" /></a>
+
 ----
 ## Recommended Installation Instructions
 
