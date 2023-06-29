@@ -12,6 +12,7 @@ import sys
 import numpy as np
 from datetime import datetime
 import glob
+import torch
 import pickle
 import swyft.lightning as sl
 import sstrax as st
@@ -32,6 +33,27 @@ import subprocess
 import psutil
 import logging
 import time
+import swyft
+
+from swyft.utils.ns import SwyftSimpleSliceSampler
+
+def linear_rescale(v, v_ranges, u_ranges):
+    """
+    Rescales a tensor in its last dimension from v_ranges to u_ranges
+    """
+    device = v.device
+
+    # Move points onto hypercube
+    v_bias = v_ranges[:, 0].to(device)
+    v_width = (v_ranges[:, 1] - v_ranges[:, 0]).to(device)
+
+    # Move points onto hypercube
+    u_bias = u_ranges[:, 0].to(device)
+    u_width = (u_ranges[:, 1] - u_ranges[:, 0]).to(device)
+
+    t = (v - v_bias) / v_width
+    u = t * u_width + u_bias  # (..., N)
+    return u
 
 
 def main(args):
@@ -152,43 +174,99 @@ def main(args):
                 f"Training completed for round {round_id}, checkpoint available at {glob.glob(f'{trainer_dir}/epoch*_R{round_id}.ckpt')[0]}"
             )
 
-        print(
-            f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Generate prior samples"
-        )
-        prior_samples = simulator.sample(100_000, targets=["z"])
+        ns_bounds = []
+        for key in simulator.priors.keys():
+            ns_bounds.append([simulator.priors[key][0], simulator.priors[key][1]])
 
-        print(
-            f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Generate posterior samples"
-        )
+        def log_likelihood(net, z):
+            z = linear_rescale(
+                z,
+                torch.tensor([0, 1]).unsqueeze(0),
+                torch.tensor(ns_bounds),
+            )
+            B = dict(z=z.to(net.device))
+            A = dict(
+                background=torch.tensor(obs["background"]).unsqueeze(0).to(net.device),
+                stream=torch.tensor(obs["stream"]).unsqueeze(0).to(net.device),
+                z=B["z"],
+            )
+            with torch.no_grad():
+                predictions = net(A, B)
+            logl = predictions["lrs_total"].logratios.squeeze(-1)
+            return logl
+
         trainer.test(
             network, val_data, glob.glob(f"{trainer_dir}/epoch*_R{round_id}.ckpt")[0]
         )
-        logratios = trainer.infer(
-            network, obs, prior_samples.get_dataloader(batch_size=2048)
+        network.eval() if str(network.device) == "cpu" else network.cuda().eval()
+        sample = swyft.to_torch(simulator.sample(1000, targets=["z"]))
+        X_init = sample["z"]
+        X_init = linear_rescale(
+            X_init,
+            torch.tensor(ns_bounds),
+            torch.tensor([0, 1]).unsqueeze(0),
         )
-        print(
-            f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Saving logratios from round {round_id}"
+        X_init.max()
+        ssss = SwyftSimpleSliceSampler(X_init)
+        ssss.nested_sampling(
+            lambda z: log_likelihood(network, z),
+            epsilon=1e-6,
+            logl_th_max=500.,
+            num_batch_samples=10,
+            samples_per_slice=20,
+            num_steps=4,
         )
-        save_logratios(logratios, conf, round_id)
-        logging.info(f"Logratios saved for round {round_id}")
+        dimensions = X_init.size(1)
+        X_post, L_post = ssss.get_posterior_samples(N=10000)
+        X_post = linear_rescale(
+            X_post,
+            torch.tensor([0, 1]).unsqueeze(0),
+            torch.tensor(ns_bounds),
+        )
+        lrs = swyft.LogRatioSamples(
+            L_post.unsqueeze(-1) * 0,
+            X_post.unsqueeze(-2),
+            np.array([["z[%i]" % i for i in range(dimensions)]]),
+        )
+        save_logratios(lrs, conf, round_id)
 
-        print(
-            f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Update bounds from round {round_id}"
-        )
-        bounds_object = sl.bounds.get_rect_bounds(
-            logratios, threshold=conf["tmnre"]["bounds_th"]
-        )
-        if type(bounds_object) == list:
-            bounds = np.squeeze(bounds_object[0].bounds.numpy())
-        else:
-            bounds = np.squeeze(bounds_object.bounds.numpy())
-        # Update bounds from bounds object
-        update_bounds(bounds, conf, round_id)
-        end_time = datetime.now()
-        print(
-            f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Completed round {round_id} in {end_time - start_time}."
-        )
-        logging.info(f"Completed round {round_id}")
+        # print(
+        #     f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Generate prior samples"
+        # )
+        # prior_samples = simulator.sample(100_000, targets=["z"])
+
+        # print(
+        #     f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Generate posterior samples"
+        # )
+        # trainer.test(
+        #     network, val_data, glob.glob(f"{trainer_dir}/epoch*_R{round_id}.ckpt")[0]
+        # )
+        # logratios = trainer.infer(
+        #     network, obs, prior_samples.get_dataloader(batch_size=2048)
+        # )
+        # print(
+        #     f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Saving logratios from round {round_id}"
+        # )
+        # save_logratios(logratios, conf, round_id)
+        # logging.info(f"Logratios saved for round {round_id}")
+
+        # print(
+        #     f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Update bounds from round {round_id}"
+        # )
+        # bounds_object = sl.bounds.get_rect_bounds(
+        #     logratios, threshold=conf["tmnre"]["bounds_th"]
+        # )
+        # if type(bounds_object) == list:
+        #     bounds = np.squeeze(bounds_object[0].bounds.numpy())
+        # else:
+        #     bounds = np.squeeze(bounds_object.bounds.numpy())
+        # # Update bounds from bounds object
+        # update_bounds(bounds, conf, round_id)
+        # end_time = datetime.now()
+        # print(
+        #     f"{datetime.now().strftime('%a %d %b %H:%M:%S')} | [tmnre.py] | Completed round {round_id} in {end_time - start_time}."
+        # )
+        # logging.info(f"Completed round {round_id}")
     # Exit the program successfully
     sys.exit(0)
 

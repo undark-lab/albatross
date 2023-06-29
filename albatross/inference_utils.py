@@ -8,6 +8,8 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import swyft.lightning as sl
+torch.set_float32_matmul_precision("high")
+from swyft.lightning.estimators import LogRatioEstimator_Autoregressive
 
 
 class InferenceNetwork(sl.SwyftModule):
@@ -21,34 +23,17 @@ class InferenceNetwork(sl.SwyftModule):
         self.in_channels = self.network_options["in_channels"]
         self.unet = Unet(in_channels=len(self.in_channels), out_channels=1)
         self.flatten = nn.Flatten(1)
-        self.linear_1d = LinearCompression(self.network_options["num_1d_features"])
-        self.logratios_1d = sl.LogRatioEstimator_1dim(
-            num_features=self.network_options["num_1d_features"],
-            num_params=self.num_params,
-            varnames="z",
+        self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7]
+        #self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7] v14
+        self.n_features = len(self.param_order) * (len(self.param_order) - 1) 
+        self.linear_1d = LinearCompression(self.n_features)
+        self.lre = LogRatioEstimator_Autoregressive(
+             self.n_features, len(self.param_order), "z"
         )
         self.noise_shuffling = conf["tmnre"]["shuffling"]
-
-        if not self.one_d_only:
-            marginals = []
-            for idx1 in range(self.num_params):
-                for idx2 in range(idx1 + 1, self.num_params):
-                    marginals.append((idx1, idx2))
-            if conf["tmnre"]["marginals"] is not None:
-                self.marginals = conf["tmnre"]["marginals"]
-            else:
-                self.marginals = tuple(marginals)
-            self.linear_2d = LinearCompression(self.network_options["num_2d_features"])
-            self.logratios_2d = sl.LogRatioEstimator_Ndim(
-                num_features=self.network_options["num_2d_features"],
-                marginals=self.marginals,
-                varnames="z",
-            )
         self.optimizer_init = sl.AdamOptimizerInit(lr=conf["hparams"]["learning_rate"])
 
     def forward(self, A, B):
-        z = B["z"]
-        z = z[:, self.vary_idxs]
         if self.noise_shuffling and A["stream"].size(0) > 1:
             noise_shuffling = torch.randperm(self.batch_size)
             background = A["background"][noise_shuffling]
@@ -57,15 +42,110 @@ class InferenceNetwork(sl.SwyftModule):
             img = (
                 A["stream"][:, self.in_channels] + A["background"][:, self.in_channels]
             )
+        s_min, s_max = 0.0, 32.0
+        img = torch.clamp((img - s_min) / (s_max - s_min), min=0.0, max=2.0)
         img = self.unet(img)
-        features_1d = self.linear_1d(self.flatten(img))
-        logratios_1d = self.logratios_1d(features_1d, z)
-        if not self.one_d_only:
-            features_2d = self.linear_2d(self.flatten(img))
-            logratios_2d = self.logratios_2d(features_2d, z)
-            return logratios_1d, logratios_2d
-        else:
-            return logratios_1d
+        compression = self.linear_1d(img)
+        z_tot_A = A["z"][:, self.param_order]
+        z_tot_B = B["z"][:, self.param_order]
+        logratios = self.lre(compression, z_tot_A, z_tot_B)
+        return logratios
+    
+# s_min, s_max = 0.0, 32.0
+# img = torch.clamp((img - s_min) / (s_max - s_min), min=0.0, max=2.0)
+# img = self.unet(img)
+# compression = self.linear_1d(img)
+# z_tot_A = A["z"][:, self.param_order]
+# z_tot_B = B["z"][:, self.param_order]
+# logratios = self.lre(compression, z_tot_A, z_tot_B)
+# return logratios
+
+class Unet(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(Unet, self).__init__()
+        self.inc = DoubleConv(in_channels, 4)
+        self.down = Down(4, 8)
+        self.up = Up(8, 4, False)
+        self.outc = OutConv(4, out_channels)
+        self.batch_norm = nn.LazyBatchNorm2d()
+
+    def forward(self, x):
+        x = self.batch_norm(x)
+        x0 = self.inc(x)
+        x1 = self.down(x0)
+        up = self.up(x1, x0)
+        f = self.outc(up)
+        return f
+
+
+class LinearCompression(nn.Module):
+    def __init__(self, out_channels=16):
+        super(LinearCompression, self).__init__()
+        self.image_compression = nn.Sequential(
+            nn.LazyBatchNorm2d(),
+            nn.LazyConv2d(out_channels=1, kernel_size=2),
+            nn.ReLU(),
+            nn.LazyConv2d(out_channels=1, kernel_size=2),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+        )
+        self.linear_compression = nn.Sequential(
+            nn.Flatten(),
+            nn.LazyLinear(128),
+            nn.ReLU(),
+            nn.LazyLinear(64),
+            nn.ReLU(),
+            nn.LazyLinear(out_channels),
+        )
+
+    def forward(self, x):
+        img_compression = self.image_compression(x)
+        return self.linear_compression(img_compression)
+
+
+# class Unet(nn.Module):
+#     def __init__(self, in_channels, out_channels):
+#         super(Unet, self).__init__()
+#         self.inc = DoubleConv(in_channels, 4)
+#         self.down = Down(4, 8)
+#         self.up = Up(8, 4, False)
+#         self.outc = OutConv(4, out_channels)
+#         self.batch_norm = nn.LazyBatchNorm2d()
+
+#     def forward(self, x):
+#         x = self.batch_norm(x)
+#         x0 = self.inc(x)
+#         x1 = self.down(x0)
+#         up = self.up(x1, x0)
+#         f = self.outc(up)
+#         return f
+
+
+# class LinearCompression(nn.Module):
+#     def __init__(self, out_channels=16):
+#         super(LinearCompression, self).__init__()
+#         self.image_compression = nn.Sequential(
+#             nn.LazyBatchNorm2d(),
+#             nn.LazyConv2d(out_channels=1, kernel_size=2),
+#             nn.ReLU(),
+#             nn.LazyConv2d(out_channels=1, kernel_size=2),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#         )
+#         self.linear_compression = nn.Sequential(
+#             nn.Flatten(),
+#             nn.LazyLinear(128),
+#             nn.ReLU(),
+#             nn.LazyLinear(64),
+#             nn.ReLU(),
+#             nn.LazyLinear(out_channels),
+#         )
+
+#     def forward(self, x):
+#         img_compression = self.image_compression(x)
+#         return self.linear_compression(img_compression)
+        
+        
 
 
 def init_network(conf: dict):
@@ -320,39 +400,6 @@ def update_sim_bounds(conf, round_id):
 
 
 # Unet implementation follows below
-
-
-class Unet(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(Unet, self).__init__()
-        self.inc = DoubleConv(in_channels, 64)
-        self.down = Down(64, 128)
-        self.up = Up(128, 64, False)
-        self.outc = OutConv(64, out_channels)
-
-    def forward(self, x):
-        x0 = self.inc(x)
-        x1 = self.down(x0)
-        up = self.up(x1, x0)
-        f = self.outc(up)
-        return f
-
-
-class LinearCompression(nn.Module):
-    def __init__(self, out_channels=32):
-        super(LinearCompression, self).__init__()
-        self.sequential = nn.Sequential(
-            nn.LazyLinear(1024),
-            nn.ReLU(),
-            nn.LazyLinear(256),
-            nn.ReLU(),
-            nn.LazyLinear(64),
-            nn.ReLU(),
-            nn.LazyLinear(out_channels),
-        )
-
-    def forward(self, x):
-        return self.sequential(x)
 
 
 class DoubleConv(nn.Module):
