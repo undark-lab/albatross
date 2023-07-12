@@ -8,6 +8,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning import loggers as pl_loggers
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import swyft.lightning as sl
+import swyft
 torch.set_float32_matmul_precision("high")
 from swyft.lightning.estimators import LogRatioEstimator_Autoregressive
 
@@ -23,8 +24,10 @@ class InferenceNetwork(sl.SwyftModule):
         self.in_channels = self.network_options["in_channels"]
         self.unet = Unet(in_channels=len(self.in_channels), out_channels=1)
         self.flatten = nn.Flatten(1)
-        self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7]
+        #self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7] # FIRST VERSION
+        #self.param_order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         #self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7] v14
+        self.param_order = [3, 2, 1, 4, 5, 6, 7, 0, 8, 9, 10, 11, 12, 13, 14, 15]
         self.n_features = len(self.param_order) * (len(self.param_order) - 1) 
         self.linear_1d = LinearCompression(self.n_features)
         self.lre = LogRatioEstimator_Autoregressive(
