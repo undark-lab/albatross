@@ -199,7 +199,7 @@ def main(args):
             network, val_data, glob.glob(f"{trainer_dir}/epoch*_R{round_id}.ckpt")[0]
         )
         network.eval() if str(network.device) == "cpu" else network.cuda().eval()
-        sample = swyft.to_torch(simulator.sample(1000, targets=["z"]))
+        sample = swyft.to_torch(simulator.sample(500, targets=["z"]))
         X_init = sample["z"]
         X_init = linear_rescale(
             X_init,
@@ -210,14 +210,30 @@ def main(args):
         ssss = SwyftSimpleSliceSampler(X_init)
         ssss.nested_sampling(
             lambda z: log_likelihood(network, z),
-            epsilon=1e-6,
+            epsilon=1e-3,
             logl_th_max=500.,
             num_batch_samples=10,
             samples_per_slice=20,
-            num_steps=4,
+            num_steps=10,
         )
         dimensions = X_init.size(1)
-        X_post, L_post = ssss.get_posterior_samples(N=10000)
+        logl_th = ssss.get_threshold(1e-3)
+        X_cp, L_cp = ssss.generate_constrained_prior_samples(
+            lambda z_total: log_likelihood(network, z_total),
+            N=10000,
+            min_logl=logl_th,
+            batch_size=100,
+        )
+        ssss = SwyftSimpleSliceSampler(X_cp)
+        ssss.nested_sampling(
+            lambda z: log_likelihood(network, z),
+            epsilon=1e-3,
+            logl_th_max=500.,
+            num_batch_samples=10,
+            samples_per_slice=20,
+            num_steps=10,
+        )
+        X_post, L_post = ssss.get_posterior_samples()
         X_post = linear_rescale(
             X_post,
             torch.tensor([0, 1]).unsqueeze(0),

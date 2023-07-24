@@ -25,9 +25,7 @@ class InferenceNetwork(sl.SwyftModule):
         self.unet = Unet(in_channels=len(self.in_channels), out_channels=1)
         self.flatten = nn.Flatten(1)
         #self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7] # FIRST VERSION
-        #self.param_order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-        #self.param_order = [8, 9, 10, 11, 12, 13, 14, 0, 15, 1, 2, 3, 4, 5, 6, 7] v14
-        self.param_order = [3, 2, 1, 4, 5, 6, 7, 0, 8, 9, 10, 11, 12, 13, 14, 15]
+        self.param_order = [3, 2, 1, 4, 5, 6, 7, 0, 8, 9, 10, 11, 12, 13, 14, 15] # SECOND VERSION
         self.n_features = len(self.param_order) * (len(self.param_order) - 1) 
         self.linear_1d = LinearCompression(self.n_features)
         self.lre = LogRatioEstimator_Autoregressive(
