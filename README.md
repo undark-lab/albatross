@@ -52,7 +52,7 @@ git clone git@github.com:undark-lab/albatross.git  # for ssh install
 ```
 - Install the relevant packages including e.g. [`swyft`](https://github.com/undark-lab/swyft) and [`sstrax`](https://github.com/undark-lab/sstrax)
 ```
-pip install git+https://github.com/undark-lab/swyft.git
+pip install git+https://github.com/undark-lab/swyft.git@f036b15dab0664614b3e3891dd41e25f6f0f230f
 pip install tensorboard psutil configparser pathlib
 
 cd /path/to/your/code/store/
